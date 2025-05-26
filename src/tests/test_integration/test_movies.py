@@ -1,4 +1,5 @@
 import random
+from datetime import date
 
 import pytest
 from sqlalchemy import select, func
@@ -361,15 +362,16 @@ async def test_create_movie_and_related_models(client, db_session):
     Test that a new movie is created successfully and related models
     (genres, actors, languages) are created if they do not exist.
     """
+    max_date = date.today().replace(year=date.today().year + 1)
     movie_data = {
         "name": "New Movie",
-        "date": "2025-12-01",
+        "date": max_date.isoformat(),
         "score": 85.5,
         "overview": "An amazing movie.",
         "status": "Released",
         "budget": 1000000.00,
         "revenue": 5000000.00,
-        "country": "USA",
+        "country": "US",
         "genres": ["Action", "Adventure"],
         "actors": ["John Doe", "Jane Doe"],
         "languages": ["English", "French"]
@@ -427,7 +429,7 @@ async def test_create_movie_duplicate_error(client, db_session, seed_database):
         "status": "Released",
         "budget": 2000000.00,
         "revenue": 8000000.00,
-        "country": "USA",
+        "country": "US",
         "genres": ["Drama"],
         "actors": ["New Actor"],
         "languages": ["Spanish"]

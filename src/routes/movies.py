@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from src.database import get_db
-from src.database.models import MovieModel, CountryModel, GenreModel, ActorModel, LanguageModel
+from src.database.models import (
+    MovieModel,
+    CountryModel,
+    GenreModel,
+    ActorModel,
+    LanguageModel,
+)
 from src.schemas.movies import (
     MovieListResponse,
     MovieListItem,
@@ -28,19 +34,20 @@ async def list_movies(
 
     total_count = await db.scalar(select(func.count(MovieModel.id)))
     if not total_count:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No movies found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
+        )
 
     total_pages = (total_count + per_page - 1) // per_page
 
     result = await db.execute(
-        select(MovieModel)
-        .order_by(MovieModel.id.desc())
-        .offset(offset)
-        .limit(per_page)
+        select(MovieModel).order_by(MovieModel.id.desc()).offset(offset).limit(per_page)
     )
     movies = result.scalars().all()
     if not movies:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No movies found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
+        )
 
     movie_items = [
         MovieListItem(
@@ -53,8 +60,14 @@ async def list_movies(
         for movie in movies
     ]
 
-    prev_page = f"/theater/movies/?page={page - 1}&per_page={per_page}" if page > 1 else None
-    next_page = f"/theater/movies/?page={page + 1}&per_page={per_page}" if page < total_pages else None
+    prev_page = (
+        f"/theater/movies/?page={page - 1}&per_page={per_page}" if page > 1 else None
+    )
+    next_page = (
+        f"/theater/movies/?page={page + 1}&per_page={per_page}"
+        if page < total_pages
+        else None
+    )
 
     return MovieListResponse(
         movies=movie_items,
@@ -78,7 +91,7 @@ async def create_movie(
     if existing_movie:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"A movie with the name '{movie_data.name}' and release date '{movie_data.date}' already exists."
+            detail=f"A movie with the name '{movie_data.name}' and release date '{movie_data.date}' already exists.",
         )
 
     country = await db.scalar(
@@ -91,9 +104,7 @@ async def create_movie(
 
     genres = []
     for genre_name in movie_data.genres:
-        genre = await db.scalar(
-            select(GenreModel).where(GenreModel.name == genre_name)
-        )
+        genre = await db.scalar(select(GenreModel).where(GenreModel.name == genre_name))
         if not genre:
             genre = GenreModel(name=genre_name)
             db.add(genre)
@@ -102,9 +113,7 @@ async def create_movie(
 
     actors = []
     for actor_name in movie_data.actors:
-        actor = await db.scalar(
-            select(ActorModel).where(ActorModel.name == actor_name)
-        )
+        actor = await db.scalar(select(ActorModel).where(ActorModel.name == actor_name))
         if not actor:
             actor = ActorModel(name=actor_name)
             db.add(actor)
@@ -143,7 +152,9 @@ async def create_movie(
         await db.refresh(movie)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid input data.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid input data."
+        )
 
     result = await db.execute(
         select(MovieModel)
@@ -171,12 +182,15 @@ async def get_movie(
             joinedload(MovieModel.country),
             joinedload(MovieModel.genres),
             joinedload(MovieModel.actors),
-            joinedload(MovieModel.languages)
+            joinedload(MovieModel.languages),
         )
         .where(MovieModel.id == movie_id)
     )
     if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie with the given ID was not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Movie with the given ID was not found.",
+        )
     return movie
 
 
@@ -187,7 +201,10 @@ async def delete_movie(
 ):
     movie = await db.get(MovieModel, movie_id)
     if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie with the given ID was not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Movie with the given ID was not found.",
+        )
     await db.delete(movie)
     await db.commit()
     return None
@@ -201,11 +218,65 @@ async def update_movie(
 ):
     movie = await db.get(MovieModel, movie_id)
     if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie with the given ID was not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Movie with the given ID was not found.",
+        )
 
     update_data = movie_data.model_dump(exclude_unset=True)
+
     for field, value in update_data.items():
-        setattr(movie, field, value)
+        if field not in ["genres", "actors", "languages", "country"]:
+            setattr(movie, field, value)
+
+    if "country" in update_data:
+        country = await db.scalar(
+            select(CountryModel).where(CountryModel.code == update_data["country"])
+        )
+        if not country:
+            country = CountryModel(code=update_data["country"], name=None)
+            db.add(country)
+            await db.flush()
+        movie.country_id = country.id
+
+    if "genres" in update_data:
+        genres = []
+        for genre_name in update_data["genres"]:
+            genre = await db.scalar(
+                select(GenreModel).where(GenreModel.name == genre_name)
+            )
+            if not genre:
+                genre = GenreModel(name=genre_name)
+                db.add(genre)
+                await db.flush()
+            genres.append(genre)
+        movie.genres = genres
+
+    if "actors" in update_data:
+        actors = []
+        for actor_name in update_data["actors"]:
+            actor = await db.scalar(
+                select(ActorModel).where(ActorModel.name == actor_name)
+            )
+            if not actor:
+                actor = ActorModel(name=actor_name)
+                db.add(actor)
+                await db.flush()
+            actors.append(actor)
+        movie.actors = actors
+
+    if "languages" in update_data:
+        languages = []
+        for lang_name in update_data["languages"]:
+            language = await db.scalar(
+                select(LanguageModel).where(LanguageModel.name == lang_name)
+            )
+            if not language:
+                language = LanguageModel(name=lang_name)
+                db.add(language)
+                await db.flush()
+            languages.append(language)
+        movie.languages = languages
 
     if "name" in update_data or "date" in update_data:
         existing = await db.scalar(
@@ -217,7 +288,7 @@ async def update_movie(
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"A movie with the name '{movie.name}' and release date '{movie.date}' already exists."
+                detail=f"A movie with the name '{movie.name}' and release date '{movie.date}' already exists.",
             )
 
     try:
@@ -225,6 +296,8 @@ async def update_movie(
         await db.refresh(movie)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid input data.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid input data."
+        )
 
     return {"detail": "Movie updated successfully."}
