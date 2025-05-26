@@ -70,7 +70,7 @@ class MovieCreate(BaseModel):
     status: MovieStatus
     budget: float = Field(..., ge=0)
     revenue: float = Field(..., ge=0)
-    country: str = Field(..., min_length=2, max_length=3)
+    country: str = Field(..., min_length=3, max_length=3)
     genres: List[str]
     actors: List[str]
     languages: List[str]
@@ -112,7 +112,7 @@ class MovieUpdate(BaseModel):
     status: Optional[MovieStatus] = None
     budget: Optional[float] = Field(None, ge=0)
     revenue: Optional[float] = Field(None, ge=0)
-    country: Optional[str] = Field(None, min_length=2, max_length=3)
+    country: Optional[str] = Field(None, min_length=3, max_length=3)
     genres: Optional[List[str]] = None
     actors: Optional[List[str]] = None
     languages: Optional[List[str]] = None
