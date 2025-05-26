@@ -210,73 +210,64 @@ async def delete_movie(
     return None
 
 
+async def _update_movie_country(
+    db: AsyncSession, movie: MovieModel, country_code: str
+) -> None:
+    country = await db.scalar(
+        select(CountryModel).where(CountryModel.code == country_code)
+    )
+    if not country:
+        country = CountryModel(code=country_code, name=None)
+        db.add(country)
+        await db.flush()
+    movie.country_id = country.id
+
+
+async def _update_movie_relationships(
+    db: AsyncSession,
+    movie: MovieModel,
+    model: type[GenreModel | ActorModel | LanguageModel],
+    names: list[str],
+    relationship_attr: str,
+) -> None:
+    items = []
+    for name in names:
+        item = await db.scalar(select(model).where(model.name == name))
+        if not item:
+            item = model(name=name)
+            db.add(item)
+            await db.flush()
+        items.append(item)
+    setattr(movie, relationship_attr, items)
+
+
 @router.patch("/{movie_id}/", response_model=MovieUpdateResponse)
 async def update_movie(
     movie_id: int,
     movie_data: MovieUpdate,
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, str]:
     movie = await db.get(MovieModel, movie_id)
     if not movie:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Movie with the given ID was not found.",
-        )
+        raise HTTPException(status_code=404, detail="Movie with the given ID was not found.")
 
     update_data = movie_data.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():
-        if field not in ["genres", "actors", "languages", "country"]:
+        if field not in {"genres", "actors", "languages", "country"}:
             setattr(movie, field, value)
 
     if "country" in update_data:
-        country = await db.scalar(
-            select(CountryModel).where(CountryModel.code == update_data["country"])
-        )
-        if not country:
-            country = CountryModel(code=update_data["country"], name=None)
-            db.add(country)
-            await db.flush()
-        movie.country_id = country.id
+        await _update_movie_country(db, movie, update_data["country"])
 
-    if "genres" in update_data:
-        genres = []
-        for genre_name in update_data["genres"]:
-            genre = await db.scalar(
-                select(GenreModel).where(GenreModel.name == genre_name)
-            )
-            if not genre:
-                genre = GenreModel(name=genre_name)
-                db.add(genre)
-                await db.flush()
-            genres.append(genre)
-        movie.genres = genres
-
-    if "actors" in update_data:
-        actors = []
-        for actor_name in update_data["actors"]:
-            actor = await db.scalar(
-                select(ActorModel).where(ActorModel.name == actor_name)
-            )
-            if not actor:
-                actor = ActorModel(name=actor_name)
-                db.add(actor)
-                await db.flush()
-            actors.append(actor)
-        movie.actors = actors
-
-    if "languages" in update_data:
-        languages = []
-        for lang_name in update_data["languages"]:
-            language = await db.scalar(
-                select(LanguageModel).where(LanguageModel.name == lang_name)
-            )
-            if not language:
-                language = LanguageModel(name=lang_name)
-                db.add(language)
-                await db.flush()
-            languages.append(language)
-        movie.languages = languages
+    relationship_updates = {
+        "genres": (GenreModel, "genres"),
+        "actors": (ActorModel, "actors"),
+        "languages": (LanguageModel, "languages"),
+    }
+    for key, (model, attr) in relationship_updates.items():
+        if key in update_data:
+            await _update_movie_relationships(db, movie, model, update_data[key], attr)
 
     if "name" in update_data or "date" in update_data:
         existing = await db.scalar(
@@ -287,8 +278,7 @@ async def update_movie(
         )
         if existing:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"A movie with the name '{movie.name}' and release date '{movie.date}' already exists.",
+                409, detail="Movie with this name and date already exists"
             )
 
     try:
@@ -296,8 +286,6 @@ async def update_movie(
         await db.refresh(movie)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid input data."
-        )
+        raise HTTPException(400, detail="Invalid data")
 
     return {"detail": "Movie updated successfully."}
