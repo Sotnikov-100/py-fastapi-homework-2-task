@@ -1,5 +1,14 @@
-from schemas.movies import (
+from src.schemas.movies import (
+    MovieCreate,
+    MovieUpdate,
+    MovieUpdateResponse,
+    MovieResponse,
     MovieDetailSchema,
-    MovieListResponseSchema,
-    MovieListItemSchema
+    MovieListItem,
+    MovieListResponse,
+    MovieStatus,
+    CountryResponse,
+    GenreResponse,
+    ActorResponse,
+    LanguageResponse,
 )
